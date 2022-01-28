@@ -1,4 +1,7 @@
-use bevy::{prelude::*, render::camera::{ActiveCameras, CameraPlugin}};
+use bevy::{
+    prelude::*,
+    render::camera::{ActiveCameras, CameraPlugin},
+};
 
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
@@ -44,7 +47,7 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut active_cameras: ResMut<ActiveCameras>,
-    mut cam_state: ResMut<State<CameraState>>,
+    cam_state: Res<State<CameraState>>,
 ) {
     // plane
     commands.spawn_bundle(PbrBundle {
@@ -67,18 +70,26 @@ fn setup(
         ..Default::default()
     });
 
-    commands.spawn_bundle(PerspectiveCameraBundle {
-        transform: Transform::from_xyz(-2.0, 5.0, 5.0).looking_at(Vec3::ZERO, Vec3::Y),
-        ..Default::default()
-    }).insert(CameraA(CameraState::Camera1));
+    commands
+        .spawn_bundle(PerspectiveCameraBundle {
+            transform: Transform::from_xyz(-2.0, 5.0, 5.0).looking_at(Vec3::ZERO, Vec3::Y),
+            ..Default::default()
+        })
+        .insert(CameraA(CameraState::Camera1));
 
     //Defaults to the latest added camera
-    commands.spawn_bundle(PerspectiveCameraBundle {
-        transform: Transform::from_xyz(0.0, 5.0, -5.0).looking_at(Vec3::ZERO, Vec3::Y),
-        ..Default::default()
-    }).insert(CameraA(CameraState::Camera2));
+    commands
+        .spawn_bundle(PerspectiveCameraBundle {
+            transform: Transform::from_xyz(0.0, 5.0, -5.0).looking_at(Vec3::ZERO, Vec3::Y),
+            ..Default::default()
+        })
+        .insert(CameraA(CameraState::Camera2));
 
-    active_cameras.add(format!("{:?}", cam_state.current()).as_str());
+    for em in CameraState::iter() {
+        if cam_state.current().ne(&em) {
+            active_cameras.add(format!("{:?}", em).as_str());
+        }
+    }
 }
 
 #[derive(Clone, Eq, PartialEq, Debug, Hash, EnumIter)]
@@ -90,10 +101,7 @@ enum CameraState {
 #[derive(Component)]
 struct CameraA(CameraState);
 
-fn switch_cam_state(
-    mut cam_state: ResMut<State<CameraState>>,
-    keys: Res<Input<KeyCode>>,
-){
+fn switch_cam_state(mut cam_state: ResMut<State<CameraState>>, keys: Res<Input<KeyCode>>) {
     if keys.just_pressed(KeyCode::C) {
         let n_state = next_enum!(CameraState, cam_state);
         let _ = cam_state.set(n_state);
@@ -104,21 +112,39 @@ fn switch_cameras(
     mut active_cameras: ResMut<ActiveCameras>,
     cam_state: Res<State<CameraState>>,
     keys: Res<Input<KeyCode>>,
-    mut query: Query<(&mut CameraA, &Camera)>
+    mut query: Query<(&mut CameraA, &mut Camera)>,
 ) {
     if keys.just_pressed(KeyCode::C) {
-        if let Some (ac) = active_cameras.get(CameraPlugin::CAMERA_3D) {
-            if let Some (o) = ac.entity {
-                if let Ok(p) = query.get(o) {
+        if let Some(ac) = active_cameras.get(CameraPlugin::CAMERA_3D) {
+            if let Some(o) = ac.entity {
+                if let Ok((a, mut b)) = query.get_mut(o) {
+                    b.name = Some(format!("{:?}", a.0));
                     let s = &cam_state.current();
-                    if p.0.0.ne(s) {
-                        active_cameras.remove(CameraPlugin::CAMERA_3D);
-                        if let Some (q) = query.iter_mut().filter(|f| f.0.0.eq(s)).last() {
+                    if a.0.ne(s) {
+                        if let Some((_, mut d)) = query
+                            .iter_mut()
+                            .filter(|(_, b)| b.name.is_some())
+                            .filter(|(_, b)| {
+                                b.name
+                                    .as_ref()
+                                    .unwrap()
+                                    .eq(&CameraPlugin::CAMERA_3D.to_string())
+                            })
+                            .last()
+                        {
+                            active_cameras.remove(CameraPlugin::CAMERA_3D);
+
+                            d.name = Some(CameraPlugin::CAMERA_3D.to_string());
+
                             active_cameras.add(CameraPlugin::CAMERA_3D);
+                        }
+                        if let Some((_, mut d)) = query.iter_mut().filter(|(a, _)| a.0.eq(s)).last()
+                        {
+                            d.name = Some(CameraPlugin::CAMERA_3D.to_string());
                         }
                     }
                 }
-            }   
+            }
         }
     }
 }
@@ -126,11 +152,19 @@ fn switch_cameras(
 fn input(
     active_cameras: Res<ActiveCameras>,
     keys: Res<Input<KeyCode>>,
+    query: Query<(&CameraA, &Camera)>,
 ) {
     if keys.just_pressed(KeyCode::C) {
-        println!("");    
+        println!();
         for active_cam in active_cameras.iter() {
-            println!("{:?}", active_cam);
+            print!("{:?}:", active_cam.name);
+            if let Some(b) = active_cam.entity {
+                if let Ok(d) = query.get(b) {
+                    println!("{:?}", d.0 .0);
+                }
+            } else {
+                println!();
+            }
         }
     }
 }
